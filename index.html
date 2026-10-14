@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Digit Studio - 손글씨 숫자(0~9) 인식기</title>
+    <meta name="description" content="웹 브라우저에서 마우스나 터치로 필기한 0~9 손글씨 숫자를 인공지능이 실시간으로 판별하고 확률 분포 및 정확도를 시각화해 주는 웹 애플리케이션">
+    
+    <!-- Modern Color Scheme & FOUC Prevention Script -->
+    <meta name="color-scheme" content="light dark">
+    <script>
+        try {
+            const savedTheme = localStorage.getItem("color-scheme");
+            if (savedTheme) {
+                document.querySelector('meta[name="color-scheme"]').content = savedTheme;
+            }
+        } catch (e) {}
+    </script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Site Header -->
+        <header class="site-header" role="banner">
+            <div class="brand-section">
+                <div class="brand-logo-icon" aria-hidden="true">🔢</div>
+                <div class="brand-info">
+                    <div class="brand-title-row">
+                        <h1 class="brand-title">DigitAI Studio</h1>
+                        <span class="brand-badge">0~9 전용</span>
+                    </div>
+                    <span class="brand-subtitle">인공지능 손글씨 숫자 인식기</span>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <button id="btnGridToggle" class="btn-icon-toggle" type="button" title="중앙 가이드선 토글" aria-label="가이드 격자선 켜기/끄기">
+                    #
+                </button>
+                <button id="btnThemeToggle" class="btn-icon-toggle" type="button" title="테마 전환" aria-label="다크/라이트 테마 전환">
+                    🌙
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Workspace: Canvas + Result -->
+        <main class="workspace-grid" role="main">
+            <!-- Left Column: Drawing Canvas Sketchpad -->
+            <section class="workspace-card canvas-card" aria-labelledby="canvas-heading">
+                <div class="card-header-bar">
+                    <h2 id="canvas-heading" class="card-heading">
+                        <span>✏️</span> 디지털 스케치북
+                    </h2>
+                    <div class="card-status-indicator">
+                        <span id="statusDot" class="status-dot"></span>
+                        <span id="statusText">준비 완료</span>
+                    </div>
+                </div>
+
+                <!-- Interactive Drawing Canvas -->
+                <div class="canvas-wrapper" id="canvasWrapper">
+                    <div class="canvas-grid-overlay" id="canvasGridOverlay" aria-hidden="true"></div>
+                    <div class="canvas-empty-hint" id="canvasEmptyHint">
+                        <span class="hint-icon">✍️</span>
+                        <span>여기에 0~9 숫자를 마우스나 터치로 써보세요</span>
+                    </div>
+                    <canvas id="sketchCanvas" width="340" height="340" aria-label="숫자를 그릴 수 있는 스케치북 캔버스"></canvas>
+                </div>
+
+                <!-- Drawing Controls & Toolbar -->
+                <div class="canvas-toolbar">
+                    <div class="toolbar-row">
+                        <!-- Pen / Eraser Group -->
+                        <div class="tool-group" role="group" aria-label="드로잉 도구">
+                            <button id="btnPen" class="tool-btn active" type="button">
+                                <span>✏️</span> 펜
+                            </button>
+                            <button id="btnEraser" class="tool-btn" type="button">
+                                <span>🧹</span> 지우개
+                            </button>
+                        </div>
+
+                        <!-- Stroke Width Slider -->
+                        <div class="stroke-slider-group">
+                            <label for="strokeRange" class="stroke-label">굵기</label>
+                            <input id="strokeRange" class="stroke-range-slider" type="range" min="8" max="32" value="20" aria-label="펜 굵기 조절">
+                            <div class="stroke-preview-dot" aria-hidden="true">
+                                <div id="strokeDot" class="stroke-dot-inner"></div>
+                            </div>
+                        </div>
+
+                        <!-- Undo & Clear -->
+                        <div class="tool-group">
+                            <button id="btnUndo" class="tool-btn" type="button" title="한 획 되돌리기">
+                                <span>↩️</span> 되돌리기
+                            </button>
+                            <button id="btnClear" class="tool-btn" type="button" title="캔버스 전체 지우기">
+                                <span>🗑️</span> 비우기
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="toolbar-row">
+                        <!-- Primary Predict Button -->
+                        <button id="btnPredict" class="action-btn action-btn-primary" type="button">
+                            <span>⚡</span> 숫자 인식하기
+                        </button>
+                    </div>
+
+                    <!-- Bottom Bar: Auto Predict Toggle & Preprocessed Mini Preview -->
+                    <div class="bottom-controls-bar">
+                        <label class="toggle-switch-label" for="autoPredictToggle">
+                            <input id="autoPredictToggle" class="toggle-switch-input" type="checkbox" checked>
+                            <span>손 떼면 실시간 자동 인식</span>
+                        </label>
+
+                        <!-- AI Eye: 28x28 Preprocessed Mini Viewer -->
+                        <div class="mini-preview-container" title="인공지능 신경망에 실제로 전달되는 28x28 전처리 이미지">
+                            <span class="mini-preview-label">AI 시선 (28×28)</span>
+                            <canvas id="miniPreviewCanvas" class="mini-preview-canvas" width="28" height="28" aria-label="전처리된 28x28 픽셀 이미지"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Recognition Results & Probability Distribution -->
+            <section class="workspace-card results-card" aria-labelledby="results-heading">
+                <div class="card-header-bar">
+                    <h2 id="results-heading" class="card-heading">
+                        <span>📊</span> AI 판별 결과
+                    </h2>
+                </div>
+
+                <!-- Hero Result Card: Inline Result + Accuracy (USER'S EXPLICIT REQUIREMENT) -->
+                <div class="hero-result-card" id="heroResultCard">
+                    <!-- Inline Header: 인식결과 + 정확도 배지 side-by-side -->
+                    <div class="result-header-inline">
+                        <div class="result-label-group">
+                            <span class="result-title-tag">인식결과</span>
+                            <!-- Accuracy Badge prominently placed right next to Result -->
+                            <div id="resultAccuracyBadge" class="accuracy-badge-pill empty">
+                                대기 중
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Large Digit Display & Status -->
+                    <div class="hero-digit-display">
+                        <div id="largeDigitNumber" class="large-digit-number empty" aria-live="polite">-</div>
+                        <div class="digit-meta-info">
+                            <p id="digitStatusText" class="digit-status-text">숫자를 필기해 보세요</p>
+                            <p id="digitSubtext" class="digit-subtext">캔버스에 0부터 9까지의 숫자를 그리면 즉시 판별합니다.</p>
+                            
+                            <!-- Quick Action Buttons -->
+                            <div class="result-actions-row">
+                                <button id="btnCopy" class="btn-result-action" type="button" title="인식된 숫자 복사">
+                                    <span>📋</span> 숫자 복사
+                                </button>
+                                <button id="btnSpeak" class="btn-result-action" type="button" title="소리로 읽기">
+                                    <span>🔊</span> 음성 듣기
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top 3 Candidates Row -->
+                <div class="top-candidates-section">
+                    <span class="section-mini-title">후보군 순위 (Top 3)</span>
+                    <div class="candidates-chips-row" id="candidatesContainer">
+                        <div class="candidate-chip"><span class="chip-rank">1위</span><span class="chip-digit">-</span><span class="chip-prob">-</span></div>
+                        <div class="candidate-chip"><span class="chip-rank">2위</span><span class="chip-digit">-</span><span class="chip-prob">-</span></div>
+                        <div class="candidate-chip"><span class="chip-rank">3위</span><span class="chip-digit">-</span><span class="chip-prob">-</span></div>
+                    </div>
+                </div>
+
+                <!-- 0 to 9 Probability Distribution Chart -->
+                <div class="chart-section">
+                    <span class="section-mini-title">0 ~ 9 확률 분포 그래프</span>
+                    <div class="prob-bars-grid" id="probBarsContainer">
+                        <!-- Populated dynamically via app.js -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Section: History Timeline -->
+        <section class="history-section" aria-labelledby="history-heading">
+            <div class="card-header-bar">
+                <h2 id="history-heading" class="card-heading">
+                    <span>🕒</span> 최근 판별 기록
+                </h2>
+                <button id="btnClearHistory" class="action-btn action-btn-secondary" type="button" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                    기록 비우기
+                </button>
+            </div>
+            <div class="history-cards-scroll" id="historyList">
+                <div class="history-empty-msg">아직 최근 인식 기록이 없습니다.</div>
+            </div>
+        </section>
+
+        <!-- Site Footer -->
+        <footer class="site-footer" role="contentinfo">
+            <p>DigitAI Studio &bull; 고정밀 28×28 MNIST 경량 신경망(MLP) 클라이언트 사이드 추론 엔진</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <!-- Scripts: Weights -> Engine -> App -->
+    <script src="model-weights.js"></script>
+    <script src="model.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
